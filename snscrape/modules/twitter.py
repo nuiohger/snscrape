@@ -1099,7 +1099,7 @@ class _TwitterAPIScraper(snscrape.base.Scraper):
 		del self._session.cookies['gt']
 		del self._apiHeaders['x-guest-token']
 
-	def _unset_user_token(self, blockUntil):
+	def _unset_user_token(self):
 		self._UserToken = ''
 		del self._apiHeaders['auth_token']
 		self._apiHeaders["x-twitter-auth-type"] = "None"
