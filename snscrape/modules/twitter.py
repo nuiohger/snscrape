@@ -1100,7 +1100,7 @@ class _TwitterAPIScraper(snscrape.base.Scraper):
 
 	def _unset_guest_token(self, blockUntil):
 		self._guestTokenManager.reset(blockUntil = blockUntil)
-		del self._session.cookies.clear()
+		self._session.cookies.clear()
 		del self._apiHeaders['x-guest-token']
 
 	def _unset_user_token(self):
