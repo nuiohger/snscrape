@@ -829,6 +829,7 @@ class _TwitterAPIScraper(snscrape.base.Scraper):
 		self._username = credential['username'] if credential else None
 		self._password = credential['password'] if credential else None
 		self._guestTokenManager = guestTokenManager
+		self._UserToken = ''
 		self._maxEmptyPages = maxEmptyPages
 		self._apiHeaders = {
 			'Authorization': _API_AUTHORIZATION_HEADER,
@@ -863,14 +864,11 @@ class _TwitterAPIScraper(snscrape.base.Scraper):
 		data = random.getrandbits(size * 8).to_bytes(size, "big")
 		return binascii.hexlify(data).decode()
 
-	def _on_response_received_setcookie(self, response: requests.Response, *args, **kwargs) -> None:
-		csrf_token = response.cookies.get('ct0')
-		if csrf_token:
-			self._session.cookies.set('ct0', csrf_token, domain='.twitter.com')
-			self._apiHeaders['x-csrf-token'] = csrf_token
-		return True, None
-
 	def _login_impl(self, username, password):
+		if not(self._UserToken):
+			self._login_process(username, password)
+
+	def _login_process(self, username, password):
 		if re.fullmatch(r"[\w.%+-]+@[\w.-]+\.\w{2,}", username):
 			_logger.error(
 				"Login with email is no longer possible. "
@@ -893,9 +891,9 @@ class _TwitterAPIScraper(snscrape.base.Scraper):
 
 		# dummy
 		url = 'https://api.twitter.com/1.1/hashflags.json'
-		self._get(url, headers=self._apiHeaders, responseOkCallback = self._on_response_received_setcookie)
+		self._get(url, headers=self._apiHeaders, responseOkCallback = self._response_process_callback)
 		url = 'https://api.twitter.com/1.1/attribution/event.json'
-		self._post(url, headers=self._apiHeaders, json={'event': 'open'}, responseOkCallback = self._on_response_received_setcookie)
+		self._post(url, headers=self._apiHeaders, json={'event': 'open'}, responseOkCallback = self._response_process_callback)
 
 		# init
 		data = {
@@ -950,7 +948,7 @@ class _TwitterAPIScraper(snscrape.base.Scraper):
 			},
 		}
 		url = "https://api.twitter.com/1.1/onboarding/task.json?flow_name=login"
-		response = self._post(url, headers=self._apiHeaders, json=data, responseOkCallback = self._on_response_received_setcookie)
+		response = self._post(url, headers=self._apiHeaders, json=data, responseOkCallback = self._response_process_callback)
 
 		data = {
 			"flow_token": process(response),
@@ -965,7 +963,7 @@ class _TwitterAPIScraper(snscrape.base.Scraper):
 			],
 		}
 		url = "https://api.twitter.com/1.1/onboarding/task.json"
-		response = self._post(url, headers=self._apiHeaders, json=data, responseOkCallback = self._on_response_received_setcookie)
+		response = self._post(url, headers=self._apiHeaders, json=data, responseOkCallback = self._response_process_callback)
 
 		# username
 		data = {
@@ -988,7 +986,7 @@ class _TwitterAPIScraper(snscrape.base.Scraper):
 			],
 		}
 		#  url = "https://api.twitter.com/1.1/onboarding/task.json"
-		response = self._post(url, headers=self._apiHeaders, json=data, responseOkCallback = self._on_response_received_setcookie)
+		response = self._post(url, headers=self._apiHeaders, json=data, responseOkCallback = self._response_process_callback)
 		
 		# password
 		data = {
@@ -1004,7 +1002,7 @@ class _TwitterAPIScraper(snscrape.base.Scraper):
 			],
 		}
 		#  url = "https://api.twitter.com/1.1/onboarding/task.json"
-		response = self._post(url, headers=self._apiHeaders, json=data, responseOkCallback = self._on_response_received_setcookie)
+		response = self._post(url, headers=self._apiHeaders, json=data, responseOkCallback = self._response_process_callback)
 
 		# account duplication check ?
 		data = {
@@ -1021,6 +1019,7 @@ class _TwitterAPIScraper(snscrape.base.Scraper):
 		#  url = "https://api.twitter.com/1.1/onboarding/task.json"
 		response = self._post(url, headers=self._apiHeaders, json=data)
 		if 'auth_token' in response.cookies:
+			self._UserToken = response.cookies['auth_token']
 			self._session.cookies.set('auth_token', response.cookies['auth_token'], domain = '.twitter.com', path = '/')
 			self._apiHeaders["x-twitter-auth-type"] = 'OAuth2Session'
 		else:
@@ -1029,7 +1028,7 @@ class _TwitterAPIScraper(snscrape.base.Scraper):
 	def _ensure_guest_token(self, url = None):
 		if self._guestTokenManager.token is None:
 			_logger.info('Retrieving guest token')
-			r = self._get(self._baseUrl if url is None else url, responseOkCallback = self._check_guest_token_response)
+			r = self._get(self._baseUrl if url is None else url, responseOkCallback = self._response_process_callback)
 			if (match := re.search(r'document\.cookie = decodeURIComponent\("gt=(\d+); Max-Age=10800; Domain=\.twitter\.com; Path=/; Secure"\);', r.text)):
 				_logger.debug('Found guest token in HTML')
 				self._guestTokenManager.token = match.group(1)
@@ -1039,7 +1038,7 @@ class _TwitterAPIScraper(snscrape.base.Scraper):
 			if not self._guestTokenManager.token:
 				_logger.debug('No guest token in response')
 				_logger.info('Retrieving guest token via API')
-				r = self._post('https://api.twitter.com/1.1/guest/activate.json', data = b'', headers = self._apiHeaders, responseOkCallback = self._check_guest_token_response)
+				r = self._post('https://api.twitter.com/1.1/guest/activate.json', data = b'', headers = self._apiHeaders, responseOkCallback = self._response_process_callback)
 				o = r.json()
 				if not o.get('guest_token'):
 					raise snscrape.base.ScraperException('Unable to retrieve guest token')
@@ -1049,58 +1048,60 @@ class _TwitterAPIScraper(snscrape.base.Scraper):
 		self._session.cookies.set('gt', self._guestTokenManager.token, domain = '.twitter.com', path = '/', secure = True, expires = self._guestTokenManager.setTime + _GUEST_TOKEN_VALIDITY)
 		self._apiHeaders['x-guest-token'] = self._guestTokenManager.token
 
-	def _check_guest_token_response(self, r):
+	def _response_process_callback(self, r, apiType=None, instructionsPath=None):
+		# Common operations
 		csrf_token = r.cookies.get('ct0')
 		if csrf_token:
 			self._session.cookies.set('ct0', csrf_token, domain='.twitter.com')
 			self._apiHeaders['x-csrf-token'] = csrf_token
-		if r.status_code != 200:
-			return False, ('non-200 response' if r.status_code != 404 else 'blocked') + f' ({r.status_code})'
-		return True, None
+
+		if apiType is not None and instructionsPath is not None:
+			# Operations specific to _check_api_response
+			if r.status_code in (403, 404, 429):
+				if r.status_code == 429 and r.headers.get('x-rate-limit-remaining', '') == '0' and 'x-rate-limit-reset' in r.headers:
+					blockUntil = min(int(r.headers['x-rate-limit-reset']), int(time.time()) + 900)
+				else:
+					blockUntil = int(time.time()) + 300
+				self._unset_guest_token(blockUntil)
+				self._ensure_guest_token()
+				if(self._username and self._password):
+					self._unset_user_token()
+					self._login_impl(self._username, self._password)
+				return False, f'blocked ({r.status_code})'
+			if r.headers.get('content-type', '').replace(' ', '') != 'application/json;charset=utf-8':
+				return False, 'content type is not JSON'
+			if r.status_code != 200:
+				return False, f'non-200 status code ({r.status_code})'
+			try:
+				obj = r.json()
+			except json.JSONDecodeError as e:
+				return False, f'received invalid JSON from Twitter ({e})'
+			r._snscrapeObj = obj
+			if apiType is _TwitterAPIType.GRAPHQL and 'errors' in obj:
+				msg = 'Twitter responded with an error: ' + ', '.join(f'{e["name"]}: {e["message"]}' for e in obj['errors'])
+				instructions = obj
+				for k in instructionsPath:
+					instructions = instructions.get(k, {})
+				if instructions:
+					_logger.warn(msg)
+					return True, None
+				else:
+					return False, msg
+			return True, None
+		else:
+			# Operations specific to _check_guest_token_response and _on_response_received_setcookie
+			if r.status_code != 200:
+				return False, ('non-200 response' if r.status_code != 404 else 'blocked') + f' ({r.status_code})'
+			return True, None
 
 	def _unset_guest_token(self, blockUntil):
 		self._guestTokenManager.reset(blockUntil = blockUntil)
 		del self._session.cookies['gt']
 		del self._apiHeaders['x-guest-token']
 
-	def _check_api_response(self, r, apiType, instructionsPath):
-		csrf_token = r.cookies.get('ct0')
-		if csrf_token:
-			print(self._session.cookies)
-			self._session.cookies.set('ct0', csrf_token, domain='.twitter.com')
-			self._apiHeaders['x-csrf-token'] = csrf_token
-		if r.status_code in (403, 404, 429):
-			if r.status_code == 429 and r.headers.get('x-rate-limit-remaining', '') == '0' and 'x-rate-limit-reset' in r.headers:
-				blockUntil = min(int(r.headers['x-rate-limit-reset']), int(time.time()) + 900)
-			else:
-				blockUntil = int(time.time()) + 300
-			self._unset_guest_token(blockUntil)
-			self._ensure_guest_token()
-			if(self._username and self._password):
-				self._login_impl(self._username, self._password)
-			return False, f'blocked ({r.status_code})'
-		if r.headers.get('content-type', '').replace(' ', '') != 'application/json;charset=utf-8':
-			return False, 'content type is not JSON'
-		if r.status_code != 200:
-			return False, f'non-200 status code ({r.status_code})'
-		try:
-			obj = r.json()
-		except json.JSONDecodeError as e:
-			return False, f'received invalid JSON from Twitter ({e})'
-		# Pass the already-parsed object outwards so it doesn't need to be decoded twice.
-		r._snscrapeObj = obj
-		if apiType is _TwitterAPIType.GRAPHQL and 'errors' in obj:
-			msg = 'Twitter responded with an error: ' + ', '.join(f'{e["name"]}: {e["message"]}' for e in obj['errors'])
-			instructions = obj
-			for k in instructionsPath:
-				instructions = instructions.get(k, {})
-			if instructions:
-				# Emit a warning if there are instructions since it could indicate incomplete data
-				_logger.warn(msg)
-				return True, None
-			else:
-				return False, msg
-		return True, None
+	def _unset_user_token(self, blockUntil):
+		self._UserToken = ''
+		del self._apiHeaders['auth_token']
 
 	def _get_api_data(self, endpoint, apiType, params, instructionsPath = None):
 		self._ensure_guest_token()
@@ -1108,7 +1109,7 @@ class _TwitterAPIScraper(snscrape.base.Scraper):
 			self._login_impl(self._username, self._password)
 		if apiType is _TwitterAPIType.GRAPHQL:
 			params = urllib.parse.urlencode({k: json.dumps(v, separators = (',', ':')) for k, v in params.items()}, quote_via = urllib.parse.quote)
-		r = self._get(endpoint, params = params, headers = self._apiHeaders, responseOkCallback = functools.partial(self._check_api_response, apiType = apiType, instructionsPath = instructionsPath))
+		r = self._get(endpoint, params = params, headers = self._apiHeaders, responseOkCallback = functools.partial(self._response_process_callback, apiType = apiType, instructionsPath = instructionsPath))
 		return r._snscrapeObj
 
 	def _iter_api_data(self, endpoint, apiType, params, paginationParams = None, cursor = None, direction = _ScrollDirection.BOTTOM, instructionsPath = None):
@@ -1923,7 +1924,7 @@ class TwitterSearchScraperMode(enum.Enum):
 class TwitterSearchScraper(_TwitterAPIScraper):
 	name = 'twitter-search'
 
-	def __init__(self, query, *, cursor = None, mode = TwitterSearchScraperMode.LIVE, top = None, maxEmptyPages = 100, **kwargs):
+	def __init__(self, query, *, cursor = None, mode = TwitterSearchScraperMode.LIVE, top = None, maxEmptyPages = 40, **kwargs):
 		if not query.strip():
 			raise ValueError('empty query')
 		if mode not in tuple(TwitterSearchScraperMode):
@@ -1994,7 +1995,7 @@ class TwitterSearchScraper(_TwitterAPIScraper):
 		group = subparser.add_mutually_exclusive_group(required = False)
 		group.add_argument('--top', action = 'store_true', default = False, help = 'Search top tweets instead of live/chronological')
 		group.add_argument('--user', action = 'store_true', default = False, help = 'Search users instead of tweets')
-		subparser.add_argument('--max-empty-pages', dest = 'maxEmptyPages', metavar = 'N', type = int, default = 100, help = 'Stop after N empty pages from Twitter; set to 0 to disable')
+		subparser.add_argument('--max-empty-pages', dest = 'maxEmptyPages', metavar = 'N', type = int, default = 40, help = 'Stop after N empty pages from Twitter; set to 0 to disable')
 		subparser.add_argument('query', type = snscrape.utils.nonempty_string_arg('query'), help = 'A Twitter search string')
 
 	@classmethod
