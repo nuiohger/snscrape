@@ -889,11 +889,15 @@ class _TwitterAPIScraper(snscrape.base.Scraper):
 				errors.append('"{}"'.format(msg) if msg else "Unknown error")
 			raise snscrape.base.ScraperException(", ".join(errors), response)	
 
+		csrf_token = self._generate_csrf_token()
+		self._session.cookies.set('ct0', csrf_token, domain = '.twitter.com', path = '/')
+		self._apiHeaders['x-csrf-token'] = csrf_token
+
 		# dummy
-		#url = 'https://api.twitter.com/1.1/hashflags.json'
-		#self._get(url, headers=self._apiHeaders, responseOkCallback = self._response_process_callback)
-		#url = 'https://api.twitter.com/1.1/attribution/event.json'
-		#self._post(url, headers=self._apiHeaders, json={'event': 'open'}, responseOkCallback = self._response_process_callback)
+		url = 'https://api.twitter.com/1.1/hashflags.json'
+		self._get(url, headers=self._apiHeaders, responseOkCallback = self._response_process_callback)
+		url = 'https://api.twitter.com/1.1/attribution/event.json'
+		self._post(url, headers=self._apiHeaders, json={'event': 'open'}, responseOkCallback = self._response_process_callback)
 
 		# init
 		data = {
@@ -1063,9 +1067,9 @@ class _TwitterAPIScraper(snscrape.base.Scraper):
 				else:
 					blockUntil = int(time.time()) + 300
 				self._unset_guest_token(blockUntil)
+				self._unset_user_token()
 				self._ensure_guest_token()
 				if(self._username and self._password):
-					self._unset_user_token()
 					self._login_impl(self._username, self._password)
 				return False, f'blocked ({r.status_code})'
 			if r.headers.get('content-type', '').replace(' ', '') != 'application/json;charset=utf-8':
@@ -1096,7 +1100,7 @@ class _TwitterAPIScraper(snscrape.base.Scraper):
 
 	def _unset_guest_token(self, blockUntil):
 		self._guestTokenManager.reset(blockUntil = blockUntil)
-		del self._session.cookies['gt']
+		del self._session.cookies.clear()
 		del self._apiHeaders['x-guest-token']
 
 	def _unset_user_token(self):
