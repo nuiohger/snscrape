@@ -182,7 +182,7 @@ class Scraper:
 
 	name = None
 
-	def __init__(self, *, retries = 3, proxies = None):
+	def __init__(self, *, retries = 10, proxies = None):
 		self._retries = retries
 		self._proxies = proxies
 		self._session = requests.Session()
