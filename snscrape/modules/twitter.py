@@ -890,8 +890,8 @@ class _TwitterAPIScraper(snscrape.base.Scraper):
 			raise snscrape.base.ScraperException(", ".join(errors), response)	
 
 		# dummy
-		url = 'https://api.twitter.com/1.1/hashflags.json'
-		self._get(url, headers=self._apiHeaders, responseOkCallback = self._response_process_callback)
+		#url = 'https://api.twitter.com/1.1/hashflags.json'
+		#self._get(url, headers=self._apiHeaders, responseOkCallback = self._response_process_callback)
 		url = 'https://api.twitter.com/1.1/attribution/event.json'
 		self._post(url, headers=self._apiHeaders, json={'event': 'open'}, responseOkCallback = self._response_process_callback)
 
@@ -1102,6 +1102,7 @@ class _TwitterAPIScraper(snscrape.base.Scraper):
 	def _unset_user_token(self, blockUntil):
 		self._UserToken = ''
 		del self._apiHeaders['auth_token']
+		self._apiHeaders["x-twitter-auth-type"] = "None"
 
 	def _get_api_data(self, endpoint, apiType, params, instructionsPath = None):
 		self._ensure_guest_token()
