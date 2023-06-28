@@ -344,9 +344,3 @@ def main():
 		except BrokenPipeError:
 			os.dup2(os.open(os.devnull, os.O_WRONLY), sys.stdout.fileno())
 			sys.exit(1)
-
-def test():
-	import sys
-	command = '--jsonl --max-results 4000 twitter-profile ReShino3'.split(' ')
-	sys.argv.extend(command)
-	main()
