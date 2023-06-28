@@ -1,4 +1,15 @@
 # snscrape
+ログイントークンによる情報取得に対応しました。
+## Usage
+`~/.snscrape/cr`に次のように認証情報を設定します
+```json
+{
+    'username': 'hogehoge',
+    'password': 'password'
+}
+```
+
+# snscrape
 snscrape is a scraper for social networking services (SNS). It scrapes things like user profiles, hashtags, or searches and returns the discovered items, e.g. the relevant posts.
 
 The following services are currently supported:
