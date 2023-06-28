@@ -892,8 +892,8 @@ class _TwitterAPIScraper(snscrape.base.Scraper):
 		# dummy
 		#url = 'https://api.twitter.com/1.1/hashflags.json'
 		#self._get(url, headers=self._apiHeaders, responseOkCallback = self._response_process_callback)
-		url = 'https://api.twitter.com/1.1/attribution/event.json'
-		self._post(url, headers=self._apiHeaders, json={'event': 'open'}, responseOkCallback = self._response_process_callback)
+		#url = 'https://api.twitter.com/1.1/attribution/event.json'
+		#self._post(url, headers=self._apiHeaders, json={'event': 'open'}, responseOkCallback = self._response_process_callback)
 
 		# init
 		data = {
